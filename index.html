@@ -184,8 +184,6 @@
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     timezoneOffset: new Date().getTimezoneOffset(),
                     touchSupport: ('ontouchstart' in window),
-                    webGL: getWebGLFingerprint(),
-                    canvas: getCanvasFingerprint(),
                     webRTC: !!(window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection),
                     deviceMemory: navigator.deviceMemory || 'unknown',
                     oscpu: navigator.oscpu || 'unknown',
@@ -194,36 +192,70 @@
                     onLine: navigator.onLine
                 };
 
-                // Add media queries (these should be consistent)
-                var mediaQueries = [
-                    'hover: hover',
-                    'pointer: fine'
-                ];
-                var mediaResults = [];
-                for (var i = 0; i < mediaQueries.length; i++) {
-                    var query = mediaQueries[i];
-                    var matches = window.matchMedia('(' + query + ')').matches;
-                    mediaResults.push(query + ':' + matches);
-                }
-                fingerprint.mediaQueries = mediaResults.join(';');
-
-                // Add font detection (should be consistent across modes)
-                var testFonts = ['Arial', 'Helvetica', 'Times', 'Courier', 'Verdana'];
-                var availableFonts = [];
-                var canvas = document.createElement('canvas');
-                var context = canvas.getContext('2d');
-                
-                for (var i = 0; i < testFonts.length; i++) {
-                    var font = testFonts[i];
-                    context.font = '72px monospace';
-                    var baseWidth = context.measureText('mmmmmmmmmmlli').width;
-                    context.font = '72px ' + font + ', monospace';
-                    var testWidth = context.measureText('mmmmmmmmmmlli').width;
-                    if (baseWidth !== testWidth) {
-                        availableFonts.push(font);
+                // Firefox may differ in WebGL - make it more generic
+                var webglInfo = 'webgl_unavailable';
+                try {
+                    var canvas = document.createElement('canvas');
+                    var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                    if (gl) {
+                        // Don't get detailed GPU info in Firefox as it may be blocked in incognito
+                        var renderer = 'webgl_available';
+                        var debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                        if (debugInfo) {
+                            try {
+                                var vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+                                var rendererInfo = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                                if (vendor && rendererInfo && vendor !== 'WebGL' && rendererInfo !== 'WebGL') {
+                                    renderer = vendor.split(' ')[0] + '_' + rendererInfo.split(' ')[0];
+                                }
+                            } catch (e) {
+                                // Firefox may block this in incognito
+                                renderer = 'webgl_blocked';
+                            }
+                        }
+                        webglInfo = renderer;
                     }
+                } catch (e) {
+                    webglInfo = 'webgl_error';
                 }
-                fingerprint.fonts = availableFonts.join(';');
+                fingerprint.webGL = webglInfo;
+
+                // Canvas fingerprint - Firefox may render differently in incognito
+                var canvasInfo = 'canvas_unavailable';
+                try {
+                    var canvas = document.getElementById('canvas');
+                    var ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Use simpler canvas fingerprint for Firefox consistency
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(10, 10, 50, 50);
+                    ctx.fillStyle = '#00ff00';
+                    ctx.font = '16px Arial';
+                    ctx.fillText('Test123', 20, 40);
+                    
+                    var dataURL = canvas.toDataURL();
+                    // Use hash of canvas instead of full data URL
+                    var hash = 0;
+                    for (var i = 0; i < dataURL.length; i++) {
+                        var char = dataURL.charCodeAt(i);
+                        hash = ((hash << 5) - hash) + char;
+                        hash = hash & hash; // Convert to 32-bit integer
+                    }
+                    canvasInfo = 'canvas_' + Math.abs(hash);
+                } catch (e) {
+                    canvasInfo = 'canvas_error';
+                }
+                fingerprint.canvas = canvasInfo;
+
+                // Remove media queries as Firefox may handle them differently
+                // Remove font detection as Firefox may block it in incognito
+
+                // Add debug logging
+                console.log('Firefox Fingerprint Data:');
+                for (var key in fingerprint) {
+                    console.log(key + ':', fingerprint[key]);
+                }
 
                 resolve(fingerprint);
             });
