@@ -170,6 +170,10 @@
 
         function getBrowserFingerprint() {
             return new Promise(function(resolve) {
+                // Detect if Firefox
+                var isFirefox = typeof InstallTrigger !== 'undefined' || 
+                               navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+
                 var fingerprint = {
                     userAgent: navigator.userAgent,
                     language: navigator.language,
@@ -192,67 +196,79 @@
                     onLine: navigator.onLine
                 };
 
-                // Firefox may differ in WebGL - make it more generic
-                var webglInfo = 'webgl_unavailable';
-                try {
+                // Canvas fingerprinting - skip for Firefox, use for others
+                if (isFirefox) {
+                    fingerprint.canvas = 'firefox_skipped';
+                } else {
+                    fingerprint.canvas = getCanvasFingerprint();
+                }
+
+                // WebGL fingerprinting - simplified for Firefox
+                if (isFirefox) {
+                    fingerprint.webGL = !!(document.createElement('canvas').getContext('webgl') || 
+                                          document.createElement('canvas').getContext('experimental-webgl')) ? 'webgl_supported' : 'webgl_not_supported';
+                } else {
+                    fingerprint.webGL = getWebGLFingerprint();
+                }
+
+                // Add font detection for non-Firefox browsers
+                if (!isFirefox) {
+                    var testFonts = ['Arial', 'Helvetica', 'Times', 'Courier', 'Verdana'];
+                    var availableFonts = [];
                     var canvas = document.createElement('canvas');
-                    var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                    if (gl) {
-                        // Don't get detailed GPU info in Firefox as it may be blocked in incognito
-                        var renderer = 'webgl_available';
-                        var debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-                        if (debugInfo) {
-                            try {
-                                var vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
-                                var rendererInfo = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-                                if (vendor && rendererInfo && vendor !== 'WebGL' && rendererInfo !== 'WebGL') {
-                                    renderer = vendor.split(' ')[0] + '_' + rendererInfo.split(' ')[0];
-                                }
-                            } catch (e) {
-                                // Firefox may block this in incognito
-                                renderer = 'webgl_blocked';
-                            }
+                    var context = canvas.getContext('2d');
+                    
+                    for (var i = 0; i < testFonts.length; i++) {
+                        var font = testFonts[i];
+                        context.font = '72px monospace';
+                        var baseWidth = context.measureText('mmmmmmmmmmlli').width;
+                        context.font = '72px ' + font + ', monospace';
+                        var testWidth = context.measureText('mmmmmmmmmmlli').width;
+                        if (baseWidth !== testWidth) {
+                            availableFonts.push(font);
                         }
-                        webglInfo = renderer;
                     }
-                } catch (e) {
-                    webglInfo = 'webgl_error';
+                    fingerprint.fonts = availableFonts.join(';');
+                } else {
+                    fingerprint.fonts = 'firefox_skipped';
                 }
-                fingerprint.webGL = webglInfo;
 
-                // Canvas fingerprint - Firefox may render differently in incognito
-                var canvasInfo = 'canvas_unavailable';
-                try {
-                    var canvas = document.getElementById('canvas');
-                    var ctx = canvas.getContext('2d');
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    
-                    // Use simpler canvas fingerprint for Firefox consistency
-                    ctx.fillStyle = '#ff0000';
-                    ctx.fillRect(10, 10, 50, 50);
-                    ctx.fillStyle = '#00ff00';
-                    ctx.font = '16px Arial';
-                    ctx.fillText('Test123', 20, 40);
-                    
-                    var dataURL = canvas.toDataURL();
-                    // Use hash of canvas instead of full data URL
-                    var hash = 0;
-                    for (var i = 0; i < dataURL.length; i++) {
-                        var char = dataURL.charCodeAt(i);
-                        hash = ((hash << 5) - hash) + char;
-                        hash = hash & hash; // Convert to 32-bit integer
+                // Add media queries for non-Firefox
+                if (!isFirefox) {
+                    var mediaQueries = ['hover: hover', 'pointer: fine'];
+                    var mediaResults = [];
+                    for (var i = 0; i < mediaQueries.length; i++) {
+                        var query = mediaQueries[i];
+                        var matches = window.matchMedia('(' + query + ')').matches;
+                        mediaResults.push(query + ':' + matches);
                     }
-                    canvasInfo = 'canvas_' + Math.abs(hash);
-                } catch (e) {
-                    canvasInfo = 'canvas_error';
+                    fingerprint.mediaQueries = mediaResults.join(';');
+                } else {
+                    fingerprint.mediaQueries = 'firefox_skipped';
                 }
-                fingerprint.canvas = canvasInfo;
 
-                // Remove media queries as Firefox may handle them differently
-                // Remove font detection as Firefox may block it in incognito
+                // Browser engine detection
+                var engine = 'unknown';
+                if (isFirefox) {
+                    engine = 'gecko';
+                } else if (window.chrome) {
+                    engine = 'blink';
+                } else if (document.documentMode) {
+                    engine = 'trident';
+                } else if (window.safari) {
+                    engine = 'webkit';
+                }
+                fingerprint.engine = engine;
 
-                // Add debug logging
-                console.log('Firefox Fingerprint Data:');
+                // Add memory info if available (mainly Chrome)
+                if (performance && performance.memory) {
+                    fingerprint.memoryLimit = performance.memory.jsHeapSizeLimit || 'unknown';
+                } else {
+                    fingerprint.memoryLimit = 'unknown';
+                }
+
+                console.log('Browser detected:', isFirefox ? 'Firefox' : 'Other');
+                console.log('Fingerprint Data:');
                 for (var key in fingerprint) {
                     console.log(key + ':', fingerprint[key]);
                 }
