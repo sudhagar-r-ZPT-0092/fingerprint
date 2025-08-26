@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Fingerprint Generator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .fingerprint-result {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .device-id {
+            font-size: 1.2em;
+            font-weight: bold;
+            word-break: break-all;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .fingerprint-data {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 0.9em;
+        }
+        
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .data-label {
+            font-weight: bold;
+            flex: 1;
+        }
+        
+        .data-value {
+            flex: 2;
+            text-align: right;
+            word-break: break-word;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            font-size: 1.1em;
+            border-radius: 25px;
+            cursor: pointer;
+            display: block;
+            margin: 20px auto;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .canvas-container {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Browser Fingerprint Generator</h1>
+        
+        <button id="generateBtn">Generate Fingerprint</button>
+        
+        <div id="result" class="fingerprint-result" style="display: none;">
+            <h3>Device ID:</h3>
+            <div id="deviceId" class="device-id"></div>
+            
+            <h3>Fingerprint Data:</h3>
+            <div id="fingerprintData" class="fingerprint-data"></div>
+        </div>
+        
+        <div class="canvas-container">
+            <canvas id="canvas" width="200" height="50"></canvas>
+        </div>
+    </div>
+
+    <script>
+        function sha256(message) {
+            return crypto.subtle.digest('SHA-256', new TextEncoder().encode(message))
+                .then(function(hashBuffer) {
+                    var hashArray = Array.from(new Uint8Array(hashBuffer));
+                    var hashHex = hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+                    return hashHex;
+                });
+        }
+
+        function getCanvasFingerprint() {
+            try {
+                var canvas = document.getElementById('canvas');
+                var ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.textBaseline = 'top';
+                ctx.font = '14px Arial';
+                ctx.fillStyle = '#f60';
+                ctx.fillRect(125, 1, 62, 20);
+                ctx.fillStyle = '#069';
+                ctx.fillText('BrowserLeaks,com <canvas> 1.0', 2, 15);
+                ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+                ctx.fillText('BrowserLeaks,com <canvas> 1.0', 4, 17);
+                return canvas.toDataURL();
+            } catch (e) {
+                return 'canvas_error';
+            }
+        }
+
+        function getWebGLFingerprint() {
+            try {
+                var canvas = document.createElement('canvas');
+                var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (!gl) return 'WebGL not supported';
+                var debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                if (debugInfo) {
+                    var vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+                    var renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                    return vendor + '~' + renderer;
+                }
+                return 'WebGL_basic';
+            } catch (e) {
+                return 'WebGL_error';
+            }
+        }
+
+        function getBrowserFingerprint() {
+            return new Promise(function(resolve) {
+                var fingerprint = {
+                    userAgent: navigator.userAgent,
+                    language: navigator.language,
+                    platform: navigator.platform,
+                    cookieEnabled: navigator.cookieEnabled,
+                    hardwareConcurrency: navigator.hardwareConcurrency || 1,
+                    maxTouchPoints: navigator.maxTouchPoints || 0,
+                    screenResolution: screen.width + 'x' + screen.height,
+                    colorDepth: screen.colorDepth,
+                    pixelDepth: screen.pixelDepth,
+                    availableScreenResolution: screen.availWidth + 'x' + screen.availHeight,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    timezoneOffset: new Date().getTimezoneOffset(),
+                    touchSupport: ('ontouchstart' in window),
+                    webGL: getWebGLFingerprint(),
+                    canvas: getCanvasFingerprint(),
+                    webRTC: !!(window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection),
+                    deviceMemory: navigator.deviceMemory || 'unknown',
+                    oscpu: navigator.oscpu || 'unknown',
+                    vendor: navigator.vendor || 'unknown',
+                    appName: navigator.appName || 'unknown',
+                    onLine: navigator.onLine
+                };
+
+                // Add media queries (these should be consistent)
+                var mediaQueries = [
+                    'hover: hover',
+                    'pointer: fine'
+                ];
+                var mediaResults = [];
+                for (var i = 0; i < mediaQueries.length; i++) {
+                    var query = mediaQueries[i];
+                    var matches = window.matchMedia('(' + query + ')').matches;
+                    mediaResults.push(query + ':' + matches);
+                }
+                fingerprint.mediaQueries = mediaResults.join(';');
+
+                // Add font detection (should be consistent across modes)
+                var testFonts = ['Arial', 'Helvetica', 'Times', 'Courier', 'Verdana'];
+                var availableFonts = [];
+                var canvas = document.createElement('canvas');
+                var context = canvas.getContext('2d');
+                
+                for (var i = 0; i < testFonts.length; i++) {
+                    var font = testFonts[i];
+                    context.font = '72px monospace';
+                    var baseWidth = context.measureText('mmmmmmmmmmlli').width;
+                    context.font = '72px ' + font + ', monospace';
+                    var testWidth = context.measureText('mmmmmmmmmmlli').width;
+                    if (baseWidth !== testWidth) {
+                        availableFonts.push(font);
+                    }
+                }
+                fingerprint.fonts = availableFonts.join(';');
+
+                resolve(fingerprint);
+            });
+        }
+
+        function generateDeviceId(fingerprint) {
+            var keys = Object.keys(fingerprint).sort();
+            var fingerprintString = '';
+            for (var i = 0; i < keys.length; i++) {
+                fingerprintString += keys[i] + ':' + fingerprint[keys[i]] + '|';
+            }
+            
+            return sha256(fingerprintString).then(function(hash) {
+                var deviceId = hash.substr(0, 8) + '-' + 
+                              hash.substr(8, 4) + '-' + 
+                              hash.substr(12, 4) + '-' + 
+                              hash.substr(16, 4) + '-' + 
+                              hash.substr(20, 12);
+                return deviceId;
+            });
+        }
+
+        function displayResults(deviceId, fingerprint) {
+            document.getElementById('deviceId').textContent = deviceId;
+            
+            var fingerprintDataDiv = document.getElementById('fingerprintData');
+            fingerprintDataDiv.innerHTML = '';
+            
+            var keys = Object.keys(fingerprint).sort();
+            for (var i = 0; i < keys.length; i++) {
+                var key = keys[i];
+                var row = document.createElement('div');
+                row.className = 'data-row';
+                
+                var label = document.createElement('div');
+                label.className = 'data-label';
+                label.textContent = key;
+                
+                var value = document.createElement('div');
+                value.className = 'data-value';
+                var valueText = String(fingerprint[key]);
+                if (valueText.length > 50) {
+                    valueText = valueText.substring(0, 50) + '...';
+                }
+                value.textContent = valueText;
+                
+                row.appendChild(label);
+                row.appendChild(value);
+                fingerprintDataDiv.appendChild(row);
+            }
+            
+            document.getElementById('result').style.display = 'block';
+        }
+
+        function generateFingerprint() {
+            var button = document.getElementById('generateBtn');
+            var resultDiv = document.getElementById('result');
+            
+            button.textContent = 'Generating...';
+            button.disabled = true;
+            resultDiv.style.display = 'none';
+            
+            getBrowserFingerprint()
+                .then(function(fingerprint) {
+                    return generateDeviceId(fingerprint).then(function(deviceId) {
+                        return { deviceId: deviceId, fingerprint: fingerprint };
+                    });
+                })
+                .then(function(result) {
+                    displayResults(result.deviceId, result.fingerprint);
+                    button.textContent = 'Regenerate Fingerprint';
+                    button.disabled = false;
+                })
+                .catch(function(error) {
+                    console.error('Error:', error);
+                    button.textContent = 'Error - Try Again';
+                    button.disabled = false;
+                });
+        }
+
+        window.addEventListener('load', function() {
+            var button = document.getElementById('generateBtn');
+            button.addEventListener('click', generateFingerprint);
+            setTimeout(generateFingerprint, 500);
+        });
+    </script>
+</body>
+</html>
